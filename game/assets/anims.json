@@ -1,0 +1,57 @@
+{
+ "cell": [
+  288,
+  176
+ ],
+ "anchor": [
+  144,
+  170
+ ],
+ "anims": {
+  "walk": {
+   "frames": 15,
+   "fps": 14,
+   "loop": true
+  },
+  "run": {
+   "frames": 22,
+   "fps": 22,
+   "loop": true
+  },
+  "attack": {
+   "frames": 20,
+   "fps": 30,
+   "loop": false
+  },
+  "idle": {
+   "frames": 20,
+   "fps": 10,
+   "loop": true
+  },
+  "cast": {
+   "frames": 8,
+   "fps": 12,
+   "loop": false
+  },
+  "crouch": {
+   "frames": 6,
+   "fps": 14,
+   "loop": false
+  },
+  "shadow_walk": {
+   "frames": 15,
+   "fps": 10,
+   "loop": true
+  },
+  "shadow_attack": {
+   "frames": 20,
+   "fps": 26,
+   "loop": false
+  },
+  "jump": {
+   "frames": 23,
+   "fps": 24,
+   "loop": false
+  }
+ }
+}
