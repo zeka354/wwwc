@@ -43,7 +43,7 @@ print('combo', len(combo))
 s_c = TARGET / body_metrics(combo[0]['m'])['h']
 cc = place(combo, W, H, s_c, CX, FY)
 # (superseded by v2 sheets) save('attack', cc[9:29], 30, False)
-save('idle', cc[29:40] + cc[38:29:-1], 10, True)
+# (superseded by idle2) save('idle', cc[29:40] + cc[38:29:-1], 10, True)
 # (superseded by v2 sheets) save('cast', ex_cells[9:17], 12, False)
 # (superseded by v2 sheets) save('crouch', ex_cells[0:6], 14, False)
 # shadow enemy: tinted walk + attack
@@ -137,5 +137,36 @@ for (y0, y1), n in zip([(70, 178), (196, 301), (320, 425), (444, 551), (568, 669
         cell = Image.new('RGBA', (W, H), (0, 0, 0, 0))
         cell.alpha_composite(img, (max(ox, 0), max(oy, 0)), (max(-ox, 0), max(-oy, 0)))
         afk_cells.append(cell)
-save('afk', afk_cells, 6, False)
+# (superseded by afk2) save('afk', afk_cells, 6, False)
+json.dump(dict(cell=[W, H], anchor=[CX, FY], anims=anims), open(f'{OUT}/anims.json', 'w'), indent=1)
+
+# ---------------------------------------------------------------- v3: AFK yawn + AFK magic (4x2 grids), new idle
+def grid_frames(path, baselines, cols=4, rows=2):
+    a = load(path); Hh, Ww = a.shape[:2]; ch, cw = Hh // rows, Ww // cols
+    out = []
+    for r in range(rows):
+        for c in range(cols):
+            y0, x0 = r*ch, c*cw
+            rgb = a[y0:y0+ch, x0:x0+cw]; m = mask_of(rgb, 55)
+            lab, k = nd.label(m, structure=np.ones((3, 3))); sz = nd.sum(m, lab, range(1, k+1))
+            m = np.isin(lab, [i+1 for i in range(k) if sz[i] >= 12])
+            out.append(dict(img=soft_rgba(rgb, m), m=m, rgb=rgb, bot=baselines[r] - y0))
+    return out
+
+def place_grid(frames, scale):
+    cells = []
+    for f in frames:
+        img = Image.fromarray(f['img']); img = img.resize((round(img.width*scale), round(img.height*scale)), Image.LANCZOS)
+        ox = int(round(CX - light_cx(f['m'], f['rgb'])*scale)); oy = int(round(FY - f['bot']*scale))
+        cell = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        cell.alpha_composite(img, (max(ox, 0), max(oy, 0)), (max(-ox, 0), max(-oy, 0)))
+        cells.append(cell)
+    return cells
+
+yawn = grid_frames('source/v3_afk_yawn.png', [427, 900])
+magic = grid_frames('source/v3_afk_magic.png', [420, 885])
+s3 = TARGET / body_metrics(yawn[0]['m'])['h']
+yc, mc = place_grid(yawn, s3), place_grid(magic, s3)
+save('afk2', yc + mc, 3, False)
+save('idle2', [yc[0], yc[3], yc[4], yc[7]], 2, True)
 json.dump(dict(cell=[W, H], anchor=[CX, FY], anims=anims), open(f'{OUT}/anims.json', 'w'), indent=1)
