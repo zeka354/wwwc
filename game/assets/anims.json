@@ -57,6 +57,11 @@
    "frames": 12,
    "fps": 14,
    "loop": false
+  },
+  "afk": {
+   "frames": 47,
+   "fps": 6,
+   "loop": false
   }
  }
 }

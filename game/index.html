@@ -95,7 +95,7 @@ h1 span { color: var(--crimson); }
   <div class="title-inner">
     <div class="eyebrow">Собор Алой Луны</div>
     <h1>Багровая <span>Жрица</span></h1>
-    <p class="lore">Тени заняли замок на утёсе и приняли твой облик. Пройди по стене до ворот собора и изгони Тень Жрицы.</p>
+    <p class="lore">Эйрис, жрица алой печати. Тени заняли замок на утёсе и приняли её облик. Пройди по стене до ворот собора и изгони Тень Жрицы.</p>
     <dl class="keys">
       <dt>A D / ← →</dt><dd>идти, удерживай — бег (Shift — сразу бег)</dd>
       <dt>Пробел / W</dt><dd>прыжок, в воздухе — второй прыжок с переворотом</dd>
@@ -125,7 +125,7 @@ h1 span { color: var(--crimson); }
 let W = 960; const H = 540, GROUND = 474, LEVEL_W = 7400, ARENA_X = 6420, LEFT = 330;   // LEFT: the gate the level starts at (keeps her clear of the touch buttons)
 const CW = 288, CH = 176, AX = 144, AY = 170;          // sprite cell + feet anchor
 const ANIM = {
-  walk: 15, run: 22, idle: 20, squat: 10, roll: 14, jump2: 12, combo12: 12, ritual: 12,
+  walk: 15, run: 22, idle: 20, afk: 47, squat: 10, roll: 14, jump2: 12, combo12: 12, ritual: 12,
   shadow_walk: 15, shadow_combo: 12
 };
 // three-hit combo cut from the 12-frame sheet: [first frame, last frame, hit frame, fps, damage, reach, knockback]
@@ -204,7 +204,8 @@ let jumpHeld = false;
 const KEYMAP = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowDown: 'down', KeyS: 'down',
   Space: 'jump', KeyW: 'jump', ArrowUp: 'jump', KeyJ: 'attack', KeyZ: 'attack', KeyK: 'cast', KeyX: 'cast', KeyL: 'roll', KeyC: 'roll',
   ShiftLeft: 'run', ShiftRight: 'run' };
-function press(k) { if (k in buf) buf[k] = .14; if (k === 'jump') jumpHeld = true; }
+let poke = false;   // any key or button press this frame (wakes her from the AFK animation)
+function press(k) { poke = true; if (k in buf) buf[k] = .14; if (k === 'jump') jumpHeld = true; }
 function release(k) { if (k === 'jump') jumpHeld = false; }
 addEventListener('keydown', e => {
   if (e.code === 'Escape' || e.code === 'KeyP') { togglePause(); return; }
@@ -253,7 +254,7 @@ function newGame() {
   G = {
     t: 0, cam: 0, shake: 0, stop: 0, score: 0, kills: 0, arena: false, bossSpawned: false, over: false,
     p: { x: 470, y: GROUND, vx: 0, vy: 0, face: 1, ground: true, coyote: 0, jumps: 0, state: 'idle', t: 0,
-         hp: 100, mp: 100, inv: 0, hold: 0, hits: new Set(), casted: false, dead: 0, dropT: 0, seg: 0, queued: false, airT: 0, flip: 0, rollCd: 0, landV: 0 },
+         hp: 100, mp: 100, inv: 0, hold: 0, hits: new Set(), casted: false, dead: 0, dropT: 0, seg: 0, queued: false, airT: 0, flip: 0, rollCd: 0, landV: 0, idleT: 0 },
     enemies: [], parts: [], texts: [], novas: [], runes: [], drops: [],
     waves: WAVES.map(w => ({ ...w, done: false })), banner: null
   };
@@ -390,6 +391,14 @@ function updatePlayer(dt) {
   } else if (p.state === 'land') {
     const hard = p.landV > 950, len = hard ? 6 : 2;
     if (p.t * 20 >= len || (dir && p.t > .05) || !p.ground) setLoco(p);
+  } else if (p.state === 'afk') {
+    // long idle: any input, movement or leaving the ground ends it at once
+    const f = Math.floor(p.t * 6);
+    if (poke || dir || held('down') || !p.ground || Math.abs(p.vx) > 25 || f >= ANIM.afk) { p.idleT = 0; setLoco(p); }
+    else if (f >= 26 && f <= 34) {   // the magic-rest phase quietly refills mana
+      p.mp = Math.min(100, p.mp + 10 * dt);
+      if (Math.random() < dt * 14) G.parts.push({ x: p.x + rnd(-50, 50), y: p.y - rnd(0, 20), vx: 0, vy: rnd(-70, -30), life: .9, max: .9, size: 3, col: '#ff6f8f', g: 0 });
+    }
   } else if (p.state === 'crouch') {
     if (!held('down') || !p.ground || dir) { p.state = 'standup'; p.t = 0; }
   } else if (p.state === 'standup') {
@@ -398,6 +407,11 @@ function updatePlayer(dt) {
     setLoco(p, true);
     if (p.ground && held('down') && !dir && p.state === 'idle') { p.state = 'crouch'; p.t = 0; }
   }
+
+  if (poke) p.idleT = 0;
+  poke = false;
+  if (p.state === 'idle') { p.idleT += dt; if (p.idleT > 30) { p.state = 'afk'; p.t = 0; } }
+  else if (p.state !== 'afk') p.idleT = 0;
 
   p.mp = Math.min(100, p.mp + 7 * dt);
   for (const d of G.drops) if (!d.taken && Math.abs(d.x - p.x) < 34 && Math.abs(d.y - (p.y - 40)) < 70) {
@@ -419,6 +433,7 @@ function setLoco(p, keep) {
 function playerFrame(p) {
   switch (p.state) {
     case 'idle': return ['idle', Math.floor(p.t * 9) % ANIM.idle];
+    case 'afk': return ['afk', Math.min(ANIM.afk - 1, Math.floor(p.t * 6))];
     case 'walk': return ['walk', Math.floor(p.t * 14 * Math.max(.6, Math.abs(p.vx) / 175)) % ANIM.walk];
     case 'run': return ['run', Math.floor(p.t * 22) % ANIM.run];
     case 'air':
@@ -819,7 +834,7 @@ function drawHUD() {
     ctx.font = `italic 500 22px "Cormorant Garamond", Georgia, serif`; ctx.fillStyle = '#c48aff'; ctx.fillText(b.b, W / 2, 242); ctx.globalAlpha = 1; }
   // first-steps hint
   if (G.t < 7 && !G.over) { ctx.globalAlpha = Math.min(1, (7 - G.t) / 1.5); ctx.textAlign = 'center'; ctx.font = `500 18px ${FONT_D}`; ctx.fillStyle = '#f2b8bf';
-    ctx.fillText(touchEl.hidden ? 'A/D — идти · Пробел — прыжок · J — серия ударов · K — ритуал · L — кувырок' : '◀ ▶ — идти (удерживай — бег) · ⚔ серия · ✦ ритуал · ⟲ кувырок', W / 2, 96); ctx.globalAlpha = 1; }
+    ctx.fillText(touchEl.hidden ? 'A/D — идти · Пробел — прыжок · J — серия ударов · K — ритуал · L — кувырок' : '◀ ▶ — идти (удерживай — бег) · ⚔ серия · ✦ ритуал · ⟲ кувырок', W / 2, 128); ctx.globalAlpha = 1; }
 }
 
 // ---------------------------------------------------------------- loop & flow

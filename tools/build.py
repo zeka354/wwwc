@@ -111,3 +111,31 @@ for name, f in [('combo12', 'v2_combo12'), ('ritual', 'v2_ritual12')]:
     if name == 'combo12':
         save('shadow_combo', shade(cells), 14, False)
 json.dump(dict(cell=[W, H], anchor=[CX, FY], anims=anims), open(f'{OUT}/anims.json', 'w'), indent=1)
+
+# ---------------------------------------------------------------- AFK (long idle), 6 rows of a labelled sheet
+def light_cx(m, rgb):
+    """horizontal body centre from light pixels (hair, skin, white robe) - ignores the red magic glow"""
+    ys, xs = np.nonzero(m)
+    top, bot = ys.min(), ys.max(); h = bot - top
+    lm = m & (rgb[..., 1] > 120) & (rgb[..., 2] > 110)
+    yy, xx = np.nonzero(lm)
+    sel = (yy > top + h*0.2) & (yy < top + h*0.8)
+    return float(np.median(xx[sel])) if sel.any() else xs.mean()
+
+a = load('source/v2_afk.png'); m = mask_of(a, 55); m[:, :470] = False; m[:, 1762:] = False   # label column, right border
+afk_cells = []
+for (y0, y1), n in zip([(70, 178), (196, 301), (320, 425), (444, 551), (568, 669), (690, 777)], [8, 8, 8, 11, 8, 4]):
+    cs = auto_cuts(m, y0, y1, 470, 1774, n)
+    fr, _ = extract(a, m, y0, y1, 470, 1774, n, keep='all', minarea=12, cut=cs)
+    base = body_metrics(fr[0]['m'])          # the row shares one ground line: use its first, effect-free frame
+    for f in fr:
+        rgb = a[y0:y1, f['cell'][0]:f['cell'][1]]
+        f['img'] = soft_rgba(rgb, f['m'])
+        sc_ = TARGET / base['h']
+        img = Image.fromarray(f['img']); img = img.resize((max(1, round(img.width*sc_)), max(1, round(img.height*sc_))), Image.LANCZOS)
+        ox = int(round(CX - light_cx(f['m'], rgb)*sc_)); oy = int(round(FY - base['bot']*sc_))
+        cell = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        cell.alpha_composite(img, (max(ox, 0), max(oy, 0)), (max(-ox, 0), max(-oy, 0)))
+        afk_cells.append(cell)
+save('afk', afk_cells, 6, False)
+json.dump(dict(cell=[W, H], anchor=[CX, FY], anims=anims), open(f'{OUT}/anims.json', 'w'), indent=1)
