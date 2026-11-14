@@ -66,6 +66,7 @@ h1 span { color: var(--crimson); }
 #tJ { right: calc(18px + env(safe-area-inset-right, 0px)); bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
 #tA { right: calc(104px + env(safe-area-inset-right, 0px)); bottom: calc(52px + env(safe-area-inset-bottom, 0px)); width: 84px; height: 84px; }
 #tM { right: calc(46px + env(safe-area-inset-right, 0px)); bottom: calc(118px + env(safe-area-inset-bottom, 0px)); }
+#tD { right: calc(200px + env(safe-area-inset-right, 0px)); bottom: calc(22px + env(safe-area-inset-bottom, 0px)); width: 64px; height: 64px; }
 .hudbtn { position: fixed; z-index: 12; top: calc(10px + env(safe-area-inset-top, 0px)); width: 40px; height: 40px; border-radius: 50%;
   background: rgba(30,8,18,.55); border: 1px solid rgba(217,164,91,.5); color: var(--bone); font-size: 1rem; cursor: pointer; display: grid; place-items: center; padding: 0; }
 #bPause { right: calc(12px + env(safe-area-inset-right, 0px)); }
@@ -84,7 +85,8 @@ h1 span { color: var(--crimson); }
   <div class="tbtn" id="tR" data-k="right">▶</div>
   <div class="tbtn" id="tA" data-k="attack"><div>⚔<small>Удар</small></div></div>
   <div class="tbtn" id="tJ" data-k="jump"><div>▲<small>Прыжок</small></div></div>
-  <div class="tbtn" id="tM" data-k="cast"><div>✦<small>Магия</small></div></div>
+  <div class="tbtn" id="tM" data-k="cast"><div>✦<small>Ритуал</small></div></div>
+  <div class="tbtn" id="tD" data-k="roll"><div>⟲<small>Кувырок</small></div></div>
 </div>
 <button class="hudbtn" id="bPause" aria-label="Пауза" hidden>❚❚</button>
 <button class="hudbtn" id="bMute" aria-label="Звук" hidden>♪</button>
@@ -96,9 +98,11 @@ h1 span { color: var(--crimson); }
     <p class="lore">Тени заняли замок на утёсе и приняли твой облик. Пройди по стене до ворот собора и изгони Тень Жрицы.</p>
     <dl class="keys">
       <dt>A D / ← →</dt><dd>идти, удерживай — бег (Shift — сразу бег)</dd>
-      <dt>Пробел / W</dt><dd>прыжок, в воздухе — второй прыжок</dd>
-      <dt>J / Z</dt><dd>удар посохом, жми ещё раз для серии</dd>
-      <dt>K / X</dt><dd>круг крови — магия по площади (35 маны)</dd>
+      <dt>Пробел / W</dt><dd>прыжок, в воздухе — второй прыжок с переворотом</dd>
+      <dt>J / Z</dt><dd>удар; жми ещё — серия из трёх ударов</dd>
+      <dt>K / X</dt><dd>священный ритуал — столбы света вокруг (40 маны)</dd>
+      <dt>L / C</dt><dd>кувырок — проскочить сквозь удар</dd>
+      <dt>S / ↓</dt><dd>присесть; S + Пробел — спрыгнуть с платформы</dd>
     </dl>
     <div id="loadbar"><i></i></div>
     <button class="btn" id="bStart" disabled>Загрузка…</button>
@@ -118,12 +122,14 @@ h1 span { color: var(--crimson); }
 <script>
 "use strict";
 // ---------------------------------------------------------------- constants
-let W = 960; const H = 540, GROUND = 474, LEVEL_W = 7400, ARENA_X = 6420;
+let W = 960; const H = 540, GROUND = 474, LEVEL_W = 7400, ARENA_X = 6420, LEFT = 330;   // LEFT: the gate the level starts at (keeps her clear of the touch buttons)
 const CW = 288, CH = 176, AX = 144, AY = 170;          // sprite cell + feet anchor
 const ANIM = {
-  walk: 15, run: 22, attack: 20, idle: 20, cast: 8, crouch: 6, jump: 23,
-  shadow_walk: 15, shadow_attack: 20
+  walk: 15, run: 22, idle: 20, squat: 10, roll: 14, jump2: 12, combo12: 12, ritual: 12,
+  shadow_walk: 15, shadow_combo: 12
 };
+// three-hit combo cut from the 12-frame sheet: [first frame, last frame, hit frame, fps, damage, reach, knockback]
+const COMBO = [[1, 3, 2, 16, 1, 140, 220], [4, 6, 5, 16, 1, 150, 240], [7, 11, 8, 14, 2, 175, 420]];
 const IMG = {};
 const ASSETS = [...Object.keys(ANIM).map(n => [n, `assets/${n}.png`]),
   ['bg', 'assets/bg_castle.jpg'], ['portrait', 'assets/portrait.png']];
@@ -193,10 +199,10 @@ const Snd = {
 
 // ---------------------------------------------------------------- input
 const keys = {}; const touchKeys = {};
-const buf = { jump: 0, attack: 0, cast: 0 };
+const buf = { jump: 0, attack: 0, cast: 0, roll: 0 };
 let jumpHeld = false;
 const KEYMAP = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowDown: 'down', KeyS: 'down',
-  Space: 'jump', KeyW: 'jump', ArrowUp: 'jump', KeyJ: 'attack', KeyZ: 'attack', KeyK: 'cast', KeyX: 'cast', KeyL: 'cast',
+  Space: 'jump', KeyW: 'jump', ArrowUp: 'jump', KeyJ: 'attack', KeyZ: 'attack', KeyK: 'cast', KeyX: 'cast', KeyL: 'roll', KeyC: 'roll',
   ShiftLeft: 'run', ShiftRight: 'run' };
 function press(k) { if (k in buf) buf[k] = .14; if (k === 'jump') jumpHeld = true; }
 function release(k) { if (k === 'jump') jumpHeld = false; }
@@ -229,7 +235,7 @@ const PLATFORMS = [
   [5100, 210, 140], [5420, 342, 250], [5860, 262, 170], [6640, 344, 180], [7060, 344, 180]
 ].map(([x, y, w]) => ({ x, y, w }));
 const WAVES = [
-  { x: 380, s: [['shadow', 640]] },
+  { x: 560, s: [['shadow', 640]] },
   { x: 1000, s: [['shadow', 600], ['wisp', 520, 300]] },
   { x: 1700, s: [['shadow', 620], ['shadow', -560]] },
   { x: 2350, s: [['wisp', 520, 260], ['wisp', 640, 320], ['shadow', 700]] },
@@ -246,8 +252,8 @@ let G;
 function newGame() {
   G = {
     t: 0, cam: 0, shake: 0, stop: 0, score: 0, kills: 0, arena: false, bossSpawned: false, over: false,
-    p: { x: 140, y: GROUND, vx: 0, vy: 0, face: 1, ground: true, coyote: 0, jumps: 0, state: 'idle', t: 0,
-         hp: 100, mp: 100, inv: 0, hold: 0, hits: new Set(), casted: false, dead: 0, dropT: 0 },
+    p: { x: 470, y: GROUND, vx: 0, vy: 0, face: 1, ground: true, coyote: 0, jumps: 0, state: 'idle', t: 0,
+         hp: 100, mp: 100, inv: 0, hold: 0, hits: new Set(), casted: false, dead: 0, dropT: 0, seg: 0, queued: false, airT: 0, flip: 0, rollCd: 0, landV: 0 },
     enemies: [], parts: [], texts: [], novas: [], runes: [], drops: [],
     waves: WAVES.map(w => ({ ...w, done: false })), banner: null
   };
@@ -266,7 +272,7 @@ function burst(x, y, n, col, spd = 220, life = .6, size = 4, g = 300) {
 function floatText(x, y, txt, col = '#f6e9e4', size = 22) { G.texts.push({ x, y, txt, col, size, t: 0 }); }
 
 function spawn(type, x, y) {
-  x = clamp(x, 40, LEVEL_W - 40);
+  x = clamp(x, LEFT + 40, LEVEL_W - 40);
   if (type === 'wisp') G.enemies.push({ type, x, y: y || 280, by: y || 280, hp: 2, max: 2, t: rnd(0, 6), vx: 0, vy: 0, recoil: 0, flash: 0, alpha: 0, face: -1, s: 1 });
   else if (type === 'boss') G.enemies.push({ type, x, y: GROUND, hp: 46, max: 46, s: 1.55, speed: 70, state: 'spawn', t: 0, cd: 1.5, rune: 3, flash: 0, alpha: 0, face: -1, vx: 0, stun: 0 });
   else G.enemies.push({ type, x, y: GROUND, hp: 4, max: 4, s: rnd(.94, 1.04), speed: rnd(80, 115), state: 'spawn', t: 0, cd: rnd(.3, .9), flash: 0, alpha: 0, face: -1, vx: 0, stun: 0 });
@@ -275,7 +281,7 @@ function spawn(type, x, y) {
 
 // ---------------------------------------------------------------- player
 function damagePlayer(dmg, fromX) {
-  const p = G.p; if (p.inv > 0 || p.dead) return;
+  const p = G.p; if (p.inv > 0 || p.dead || (p.state === 'roll' && p.t * 26 < 8)) return;
   p.hp -= dmg; p.inv = 1.0;
   if (p.state !== 'cast') { p.state = 'hurt'; p.t = 0; p.vx = (p.x < fromX ? -1 : 1) * 260; p.vy = Math.min(p.vy, -260); p.ground = false; }  // casting cannot be interrupted
   G.shake = 8; Snd.hurt(); burst(p.x, p.y - 60, 14, '#ff3a5c', 260, .5);
@@ -285,62 +291,69 @@ function damagePlayer(dmg, fromX) {
 
 function updatePlayer(dt) {
   const p = G.p;
-  p.t += dt; p.inv = Math.max(0, p.inv - dt);
+  p.t += dt; p.inv = Math.max(0, p.inv - dt); p.rollCd = Math.max(0, p.rollCd - dt);
   if (p.dead) {
     p.dead += dt; p.vx *= .9; p.vy += 2300 * dt; p.y = Math.min(GROUND, p.y + p.vy * dt); p.x += p.vx * dt;
-    if (p.dead > 2.2 && !G.over) endGame(false);
+    if (p.dead > .5 && Math.random() < dt * 30) G.parts.push({ x: p.x + rnd(-20, 20), y: p.y - rnd(10, 90), vx: rnd(-10, 10), vy: rnd(-90, -40), life: 1, max: 1, size: 3, col: '#ffd2da', g: 0 });
+    if (p.dead > 2.4 && !G.over) endGame(false);
     return;
   }
   const dir = (held('right') ? 1 : 0) - (held('left') ? 1 : 0);
   p.hold = dir ? p.hold + dt : 0;
   const running = held('run') || p.hold > .45;
-  const busy = p.state === 'attack' || p.state === 'cast' || p.state === 'hurt';
+  const st = p.state;
+  const locked = st === 'attack' || st === 'cast' || st === 'hurt' || st === 'roll';
   let target = dir * (running ? 330 : 175);
-  if (p.state === 'attack') target *= p.ground ? .25 : .8;
-  if (p.state === 'cast') target = 0;
-  if (p.state !== 'hurt') p.vx += (target - p.vx) * Math.min(1, dt * (p.ground ? 12 : 6));
+  if (st === 'attack') target = p.ground ? p.face * 40 : target * .8;   // small step forward on each swing
+  if (st === 'cast' || st === 'crouch') target = 0;
+  if (st === 'roll') target = p.face * 400;
+  if (st !== 'hurt') p.vx += (target - p.vx) * Math.min(1, dt * (p.ground || st === 'roll' ? 12 : 6));
   else p.vx *= Math.pow(.02, dt);
-  if (dir && !busy) p.face = dir;
+  if (dir && !locked) p.face = dir;
 
-  // jump / double jump / drop-through
   for (const k in buf) buf[k] = Math.max(0, buf[k] - dt);
   p.coyote = p.ground ? .1 : Math.max(0, p.coyote - dt);
-  const attackFrame = Math.floor(p.t * 30);
-  const canJump = p.state !== 'cast' && p.state !== 'hurt' && !(p.state === 'attack' && attackFrame < 12);
+
+  // jump / double jump (with flip) / drop-through
+  const canJump = st !== 'cast' && st !== 'hurt' && st !== 'roll' && !(st === 'attack' && p.t < .1);
   if (buf.jump && canJump) {
     if (held('down') && p.ground && p.y < GROUND) { p.dropT = .25; p.ground = false; buf.jump = 0; }
     else if (p.ground || p.coyote > 0 || p.jumps < 2) {
       const second = !(p.ground || p.coyote > 0);
       if (second && p.jumps === 0) p.jumps = 1;
-      p.vy = second ? -760 : -860; p.jumps++; p.ground = false; p.coyote = 0; buf.jump = 0;
-      if (p.state === 'attack') p.state = 'air';
+      p.vy = second ? -760 : -860; p.jumps++; p.ground = false; p.coyote = 0; buf.jump = 0; p.airT = 0;
+      p.state = 'air'; p.t = 0; p.flip = second ? .32 : 0;
       Snd.jump();
       if (second) burst(p.x, p.y - 10, 16, '#f2b8bf', 160, .45, 3, 0);
       else burst(p.x, p.y, 8, '#8a6a70', 90, .35, 3, -100);
     }
   }
-  if (!jumpHeld && p.vy < -380) p.vy = -380;
+  if (!jumpHeld && p.vy < -380 && p.flip <= 0) p.vy = -380;
 
-  // attack
-  if (buf.attack && p.state !== 'cast' && p.state !== 'hurt') {
-    if (p.state !== 'attack') { p.state = 'attack'; p.t = 0; p.hits.clear(); buf.attack = 0; p.swung = false; }
-    else if (attackFrame >= 13) { p.t = 2 / 30; p.hits.clear(); buf.attack = 0; p.swung = false; }
-    if (dir) p.face = dir;
+  // roll (dodge): ground only, cannot be interrupted, invulnerable for the first part
+  if (buf.roll && p.ground && p.rollCd <= 0 && st !== 'cast' && st !== 'hurt' && st !== 'roll') {
+    buf.roll = 0; if (dir) p.face = dir;
+    p.state = 'roll'; p.t = 0; p.vx = p.face * 300; Snd.swing();
   }
-  // cast
-  if (buf.cast && p.state !== 'cast' && p.state !== 'hurt' && !(p.state === 'attack' && attackFrame < 12)) {
+  // attack: three-hit chain, each press during a swing queues the next one
+  if (buf.attack && st !== 'cast' && st !== 'hurt' && st !== 'roll') {
+    buf.attack = 0;
+    if (p.state !== 'attack') { startSwing(p, 0); if (dir) p.face = dir; }
+    else p.queued = true;
+  }
+  // sacred ritual
+  if (buf.cast && st !== 'cast' && st !== 'hurt' && st !== 'roll' && p.ground) {
     buf.cast = 0;
-    if (p.mp >= 35) { p.mp -= 35; p.state = 'cast'; p.t = 0; p.casted = false; }
+    if (p.mp >= 40) { p.mp -= 40; p.state = 'cast'; p.t = 0; p.casted = false; p.vx = 0; }
     else floatText(p.x, p.y - 140, 'мало маны', '#f2b8bf', 18);
   }
 
   // physics
-  const wasGround = p.ground, prevY = p.y;
+  const wasGround = p.ground, prevY = p.y, fallV = p.vy;
   p.vy += 2300 * (p.vy > 0 ? 1.15 : 1) * dt; p.vy = Math.min(p.vy, 1150);
   p.x += p.vx * dt;
-  const minX = G.arena ? ARENA_X + 20 : 20;
-  p.x = clamp(p.x, minX, LEVEL_W - 20);
-  p.y += p.vy * dt; p.ground = false; p.dropT = Math.max(0, p.dropT - dt);
+  p.x = clamp(p.x, G.arena ? ARENA_X + 20 : LEFT + 20, LEVEL_W - 20);
+  p.y += p.vy * dt; p.ground = false; p.dropT = Math.max(0, p.dropT - dt); p.airT += dt; p.flip -= dt;
   if (p.y >= GROUND) { p.y = GROUND; p.vy = 0; p.ground = true; }
   else if (p.vy >= 0 && p.dropT <= 0) {
     for (const pl of PLATFORMS) {
@@ -349,34 +362,52 @@ function updatePlayer(dt) {
   }
   if (p.ground) p.jumps = 0;
   if (!wasGround && p.ground) {
-    burst(p.x, p.y, 6, '#8a6a70', 80, .3, 3, -80);
-    if (!dir && (p.state === 'air' || p.state === 'jump')) { p.state = 'land'; p.t = 0; }
+    burst(p.x, p.y, fallV > 900 ? 14 : 6, '#8a6a70', fallV > 900 ? 140 : 80, .35, 3, -80);
+    if (p.state === 'air') { p.state = 'land'; p.t = 0; p.landV = fallV; }
   }
+  if (wasGround && !p.ground && p.state !== 'air' && !locked) { p.state = 'air'; p.t = 0; p.airT = .2; }
 
   // state machine
   if (p.state === 'attack') {
-    const f = Math.floor(p.t * 30);
-    if (f >= 3 && !p.swung) { p.swung = true; Snd.swing(); }
-    if (f >= 4 && f <= 11) {
-      const hb = { x0: Math.min(p.x + p.face * 10, p.x + p.face * 150), x1: Math.max(p.x + p.face * 10, p.x + p.face * 150), y0: p.y - 130, y1: p.y + 5 };
-      for (const e of G.enemies) if (!e.dead && e.alpha > .5 && !p.hits.has(e) && boxHit(hb, eBox(e))) { p.hits.add(e); hurtEnemy(e, 1, p.face * 240); }
+    const c = COMBO[p.seg], f = c[0] + Math.floor(p.t * c[3]);
+    if (f >= c[2] && f <= c[2] + 1) {
+      const r = c[5], hb = { x0: Math.min(p.x + p.face * 10, p.x + p.face * r), x1: Math.max(p.x + p.face * 10, p.x + p.face * r), y0: p.y - (p.seg === 2 ? 160 : 130), y1: p.y + 5 };
+      for (const e of G.enemies) if (!e.dead && e.alpha > .5 && !p.hits.has(e) && boxHit(hb, eBox(e))) { p.hits.add(e); hurtEnemy(e, c[4], p.face * c[6]); }
     }
-    if (f >= ANIM.attack) setLoco(p);
+    if (f > c[1]) {
+      if (p.queued && p.seg < 2) { if (dir) p.face = dir; startSwing(p, p.seg + 1); }
+      else setLoco(p);
+    }
   } else if (p.state === 'cast') {
-    const f = Math.floor(p.t * 12);
-    if (f >= 4 && !p.casted) { p.casted = true; Snd.cast(); G.novas.push({ x: p.x, y: p.y - 56, t: 0, hit: new Set() }); G.shake = 6; }
-    if (f >= ANIM.cast) setLoco(p);
+    const f = Math.floor(p.t * 13);
+    if (f >= 5 && !p.casted) { p.casted = true; Snd.cast(); G.novas.push({ x: p.x, y: p.y - 40, t: 0, hit: new Set() }); G.shake = 8; }
+    if (f >= ANIM.ritual) setLoco(p);
+  } else if (p.state === 'roll') {
+    if (Math.random() < dt * 30) G.parts.push({ x: p.x - p.face * 20, y: p.y - rnd(0, 10), vx: -p.face * 40, vy: -30, life: .3, max: .3, size: 3, col: '#8a6a70', g: 0 });
+    if (2 + Math.floor(p.t * 26) > 12) { p.rollCd = .15; setLoco(p); }
   } else if (p.state === 'hurt') {
     if (p.t > .38 && p.ground) setLoco(p);
   } else if (p.state === 'land') {
-    if (p.t * 26 >= 5 || dir || !p.ground) setLoco(p);
-  } else setLoco(p, true);
+    const hard = p.landV > 950, len = hard ? 6 : 2;
+    if (p.t * 20 >= len || (dir && p.t > .05) || !p.ground) setLoco(p);
+  } else if (p.state === 'crouch') {
+    if (!held('down') || !p.ground || dir) { p.state = 'standup'; p.t = 0; }
+  } else if (p.state === 'standup') {
+    if (p.t * 24 >= 4 || dir || !p.ground) setLoco(p);
+  } else {
+    setLoco(p, true);
+    if (p.ground && held('down') && !dir && p.state === 'idle') { p.state = 'crouch'; p.t = 0; }
+  }
 
   p.mp = Math.min(100, p.mp + 7 * dt);
-  // pickups
   for (const d of G.drops) if (!d.taken && Math.abs(d.x - p.x) < 34 && Math.abs(d.y - (p.y - 40)) < 70) {
     d.taken = true; p.hp = Math.min(100, p.hp + 22); Snd.pick(); floatText(p.x, p.y - 140, '+22', '#ff8fa3', 24); burst(d.x, d.y, 12, '#ff6f8f', 120, .5);
   }
+}
+function startSwing(p, seg) {
+  p.state = 'attack'; p.seg = seg; p.t = 0; p.queued = false; p.hits.clear();
+  if (seg === 2) setTimeout(() => Snd.swing(), 120); else Snd.swing();
+  if (!p.ground && p.vy > 0) p.vy *= .4;   // brief hang time for air combos
 }
 function setLoco(p, keep) {
   let s;
@@ -390,12 +421,20 @@ function playerFrame(p) {
     case 'idle': return ['idle', Math.floor(p.t * 9) % ANIM.idle];
     case 'walk': return ['walk', Math.floor(p.t * 14 * Math.max(.6, Math.abs(p.vx) / 175)) % ANIM.walk];
     case 'run': return ['run', Math.floor(p.t * 22) % ANIM.run];
-    case 'air': return ['jump', 6 + Math.round(clamp((p.vy + 800) / 1600, 0, 1) * 11)];
-    case 'land': return ['jump', Math.min(22, 18 + Math.floor(p.t * 26))];
-    case 'attack': return ['attack', Math.min(ANIM.attack - 1, Math.floor(p.t * 30))];
-    case 'cast': return ['cast', Math.min(ANIM.cast - 1, Math.floor(p.t * 12))];
-    case 'hurt': return ['crouch', 3];
-    case 'dead': return ['crouch', Math.min(4, 3 + Math.floor(p.dead * 4))];
+    case 'air':
+      if (p.flip > 0) return ['roll', 4 + Math.floor((.32 - p.flip) / .32 * 4) % 4];   // somersault on the double jump
+      if (p.airT < .07) return ['jump2', 4];
+      return ['jump2', 5 + Math.round(clamp((p.vy + 700) / 1400, 0, 1) * 4)];
+    case 'land':
+      if (p.landV > 950) return ['squat', [3, 4, 4, 7, 8, 9][Math.min(5, Math.floor(p.t * 20))]];
+      return ['jump2', 10 + Math.min(1, Math.floor(p.t * 20))];
+    case 'attack': { const c = COMBO[p.seg]; return ['combo12', Math.min(c[1], c[0] + Math.floor(p.t * c[3]))]; }
+    case 'cast': return ['ritual', Math.min(ANIM.ritual - 1, Math.floor(p.t * 13))];
+    case 'roll': return ['roll', Math.min(12, 2 + Math.floor(p.t * 26))];
+    case 'crouch': return ['squat', Math.min(4, Math.floor(p.t * 24))];
+    case 'standup': return ['squat', Math.min(9, 5 + Math.floor(p.t * 24))];
+    case 'hurt': return ['squat', 2];
+    case 'dead': return ['squat', Math.min(4, Math.floor(p.dead * 8))];
   }
   return ['idle', 0];
 }
@@ -435,7 +474,7 @@ function updateEnemies(dt) {
       e.face = dx > 0 ? 1 : -1;
       if (adx > reach * .9) e.vx += (e.face * e.speed - e.vx) * Math.min(1, dt * 6);
       else e.vx *= Math.pow(.001, dt);
-      if (adx < reach && e.cd <= 0 && p.y > e.y - 120 * e.s && !p.dead) { e.state = 'attack'; e.t = 0; e.hitDone = false; }
+      if (adx < reach && e.cd <= 0 && p.y > e.y - 120 * e.s && !p.dead) { e.state = 'attack'; e.t = 0; e.hitDone = new Set(); }
       if (e.type === 'boss') {
         e.rune -= dt;
         if (e.rune <= 0 && e.alpha >= 1) {
@@ -447,16 +486,17 @@ function updateEnemies(dt) {
       }
     } else if (e.state === 'attack') {
       e.vx *= Math.pow(.001, dt);
-      const fps = e.type === 'boss' ? 20 : 24, f = Math.floor(e.t * fps);
-      if (f >= 6 && f <= 11 && !e.hitDone) {
-        const r = (e.type === 'boss' ? 170 : 130);
-        const hb = { x0: Math.min(e.x + e.face * 10, e.x + e.face * r), x1: Math.max(e.x + e.face * 10, e.x + e.face * r), y0: e.y - 130 * e.s, y1: e.y + 5 };
-        if (boxHit(hb, pBox(p))) { e.hitDone = true; damagePlayer(e.type === 'boss' ? 20 : 12, e.x); }
+      const A = enemyAttack(e), i = Math.floor(e.t * A.fps), f = A.seq[Math.min(i, A.seq.length - 1)];
+      if (A.hits.includes(f) && !e.hitDone.has(f)) {
+        const r = e.type === 'boss' ? (f === 8 ? 200 : 165) : 130;
+        const hb = { x0: Math.min(e.x + e.face * 10, e.x + e.face * r), x1: Math.max(e.x + e.face * 10, e.x + e.face * r), y0: e.y - 140 * e.s, y1: e.y + 5 };
+        e.hitDone.add(f);
+        if (boxHit(hb, pBox(p))) damagePlayer(e.type === 'boss' ? (f === 8 ? 24 : 14) : 12, e.x);
       }
-      if (f >= ANIM.shadow_attack) { e.state = 'walk'; e.t = 0; e.cd = e.type === 'boss' ? rnd(.8, 1.3) : rnd(1.0, 1.7); }
+      if (i >= A.seq.length) { e.state = 'walk'; e.t = 0; e.cd = e.type === 'boss' ? rnd(.8, 1.3) : rnd(1.0, 1.7); }
     }
     e.x += e.vx * dt;
-    e.x = clamp(e.x, G.arena ? ARENA_X + 30 : 30, LEVEL_W - 30);
+    e.x = clamp(e.x, G.arena ? ARENA_X + 30 : LEFT + 30, LEVEL_W - 30);
   }
   // separation
   const walkers = G.enemies.filter(e => !e.dead && e.type !== 'wisp');
@@ -465,6 +505,11 @@ function updateEnemies(dt) {
     if (Math.abs(d) < min) { const push = (min - Math.abs(d)) / 2 * (d >= 0 ? 1 : -1); a.x -= push * .5; b.x += push * .5; }
   }
   G.enemies = G.enemies.filter(e => !e.dead || e.dead < .9);
+}
+// shadows telegraph with a held wind-up frame; the boss uses the whole three-hit chain
+function enemyAttack(e) {
+  return e.type === 'boss' ? { seq: [0, 0, 1, 2, 3, 4, 5, 6, 7, 7, 8, 9, 10, 11], fps: 10, hits: [2, 5, 8] }
+                           : { seq: [0, 0, 1, 1, 2, 3, 4, 11], fps: 10, hits: [2] };
 }
 function updateWisp(e, dt, p) {
   e.t += dt;
@@ -485,7 +530,7 @@ function updateEffects(dt) {
     n.t += dt; const r = 40 + n.t / .45 * 210;
     for (const e of G.enemies) if (!e.dead && !n.hit.has(e) && e.alpha > .5) {
       const ey = e.type === 'wisp' ? e.y : e.y - 60 * e.s;
-      if (Math.hypot(e.x - n.x, ey - n.y) < r) { n.hit.add(e); hurtEnemy(e, 3, (e.x > n.x ? 1 : -1) * 380); }
+      if (Math.abs(e.x - n.x) < r && Math.abs(ey - n.y) < 170) { n.hit.add(e); hurtEnemy(e, 4, (e.x > n.x ? 1 : -1) * 380); }
     }
     if (Math.random() < .8) { const a = rnd(0, 6.28); G.parts.push({ x: n.x + Math.cos(a) * r, y: n.y + Math.sin(a) * r * .55, vx: 0, vy: -40, life: .4, max: .4, size: 3, col: '#ff4a6e', g: 0 }); }
   }
@@ -672,6 +717,11 @@ function render() {
   // floor
   const fo = -(cam % 256); for (let x = fo - 256; x < W + 256; x += 256) ctx.drawImage(layerFloor, x, GROUND);
   for (const lx of LANTERNS) { const x = lx - cam; if (x > -140 && x < W + 140) drawLantern(x); }
+  // starting gate
+  { const gx = LEFT - cam; if (gx > -40) { ctx.fillStyle = '#140910'; ctx.fillRect(gx - 400, 120, 400, GROUND - 120);
+    ctx.fillStyle = '#24121c'; ctx.fillRect(gx - 34, 120, 34, GROUND - 120); ctx.fillStyle = 'rgba(255,200,220,.07)'; ctx.fillRect(gx - 34, 120, 3, GROUND - 120);
+    ctx.fillStyle = '#0b0508'; ctx.beginPath(); ctx.moveTo(gx - 200, GROUND); ctx.lineTo(gx - 200, GROUND - 170); ctx.quadraticCurveTo(gx - 140, GROUND - 260, gx - 80, GROUND - 170); ctx.lineTo(gx - 80, GROUND); ctx.fill();
+    ctx.strokeStyle = '#3a2430'; ctx.lineWidth = 3; for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(gx - 190 + i * 25, GROUND); ctx.lineTo(gx - 190 + i * 25, GROUND - 190 + Math.abs(i - 2) * 18); ctx.stroke(); } } }
   // arena gate
   if (G.arena) { const gx = ARENA_X - cam; ctx.fillStyle = '#1a0c14'; ctx.fillRect(gx - 22, GROUND - 300, 22, 300);
     ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(176,107,255,${.25 + Math.sin(G.t * 4) * .1})`; ctx.fillRect(gx, GROUND - 300, 10, 300); ctx.restore(); }
@@ -690,7 +740,7 @@ function render() {
     const a = e.dead ? Math.max(0, 1 - e.dead / .9) : e.alpha;
     shadowBlob(x, e.y, 26 * e.s * a);
     let name = 'shadow_walk', f;
-    if (e.state === 'attack' && !e.dead) { name = 'shadow_attack'; f = Math.min(ANIM.shadow_attack - 1, Math.floor(e.t * (e.type === 'boss' ? 20 : 24))); }
+    if (e.state === 'attack' && !e.dead) { name = 'shadow_combo'; const A = enemyAttack(e); f = A.seq[Math.min(A.seq.length - 1, Math.floor(e.t * A.fps))]; }
     else f = Math.abs(e.vx) > 15 ? Math.floor(G.t * 12 * (e.speed / 100) + e.x * .01) % ANIM.shadow_walk : (Math.floor(G.t * 4) % 3) + 6;
     const sink = e.dead ? e.dead * 30 : 0;
     drawSprite(name, f, x, e.y + sink, e.face, e.s, a * .95, e.flash);
@@ -769,7 +819,7 @@ function drawHUD() {
     ctx.font = `italic 500 22px "Cormorant Garamond", Georgia, serif`; ctx.fillStyle = '#c48aff'; ctx.fillText(b.b, W / 2, 242); ctx.globalAlpha = 1; }
   // first-steps hint
   if (G.t < 7 && !G.over) { ctx.globalAlpha = Math.min(1, (7 - G.t) / 1.5); ctx.textAlign = 'center'; ctx.font = `500 18px ${FONT_D}`; ctx.fillStyle = '#f2b8bf';
-    ctx.fillText(touchEl.hidden ? 'A/D — идти · Пробел — прыжок · J — удар · K — магия' : '◀ ▶ — идти (удерживай — бег) · ⚔ удар · ✦ магия', W / 2, 96); ctx.globalAlpha = 1; }
+    ctx.fillText(touchEl.hidden ? 'A/D — идти · Пробел — прыжок · J — серия ударов · K — ритуал · L — кувырок' : '◀ ▶ — идти (удерживай — бег) · ⚔ серия · ✦ ритуал · ⟲ кувырок', W / 2, 96); ctx.globalAlpha = 1; }
 }
 
 // ---------------------------------------------------------------- loop & flow

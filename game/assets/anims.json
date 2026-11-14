@@ -18,39 +18,44 @@
    "fps": 22,
    "loop": true
   },
-  "attack": {
-   "frames": 20,
-   "fps": 30,
-   "loop": false
-  },
   "idle": {
    "frames": 20,
    "fps": 10,
    "loop": true
-  },
-  "cast": {
-   "frames": 8,
-   "fps": 12,
-   "loop": false
-  },
-  "crouch": {
-   "frames": 6,
-   "fps": 14,
-   "loop": false
   },
   "shadow_walk": {
    "frames": 15,
    "fps": 10,
    "loop": true
   },
-  "shadow_attack": {
-   "frames": 20,
-   "fps": 26,
+  "squat": {
+   "frames": 10,
+   "fps": 20,
    "loop": false
   },
-  "jump": {
-   "frames": 23,
+  "roll": {
+   "frames": 14,
    "fps": 24,
+   "loop": false
+  },
+  "jump2": {
+   "frames": 12,
+   "fps": 24,
+   "loop": false
+  },
+  "combo12": {
+   "frames": 12,
+   "fps": 14,
+   "loop": false
+  },
+  "shadow_combo": {
+   "frames": 12,
+   "fps": 14,
+   "loop": false
+  },
+  "ritual": {
+   "frames": 12,
+   "fps": 14,
    "loop": false
   }
  }

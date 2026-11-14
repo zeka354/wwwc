@@ -156,7 +156,7 @@ def blobs(a, m, minsize=1500, near=12, minarea=25):
         core = nd.binary_dilation(sl == i+1, iterations=near)
         ids = [j for j in set(np.unique(sl[core])) - {0} if j == i+1 or (sz[j-1] >= minarea and j-1 not in bigs)]
         km = np.isin(sl, ids)
-        out.append(dict(img=np.dstack([a[y0:y1, x0:x1], km*255]).astype(np.uint8), m=km, y0=y0, y1=y1))
+        out.append(dict(img=np.dstack([a[y0:y1, x0:x1], km*255]).astype(np.uint8), m=km, y0=y0, y1=y1, x0=x0))
     return out
 
 def body_metrics(m):
@@ -184,3 +184,43 @@ def place(frames, W, H, scale, cx_at, foot_y, mode='bottom', stand_h=None):
         cell.alpha_composite(img, (max(ox,0), max(oy,0)), (max(-ox,0), max(-oy,0)))
         res.append(cell)
     return res
+
+def soft_rgba(a, m, bg_level=30, full=70):
+    """binary character mask plus soft alpha for red glow (magic arcs) outside it"""
+    mx = a.max(2).astype(np.float32)
+    soft = np.clip((mx - bg_level) / (full - bg_level), 0, 1)
+    red = (a[..., 0] > a[..., 1] * 1.5) & (a[..., 0] > a[..., 2] * 1.2)
+    alpha = np.where(m, 1.0, np.where(red, soft, 0))
+    return np.dstack([a, alpha * 255]).astype(np.uint8)
+
+def panels(a, xs, ys, inset=8, t=55):
+    """cut a labelled grid of dark panels -> list of dicts with img/m in panel coordinates"""
+    out = []
+    for y0, y1 in ys:
+        for x0, x1 in xs:
+            sub = a[y0+inset:y1-inset, x0+inset:x1-inset]
+            m = mask_of(sub, t)
+            lab, k = nd.label(m, structure=np.ones((3, 3)))
+            sz = nd.sum(m, lab, range(1, k+1))
+            m = np.isin(lab, [i+1 for i in range(k) if sz[i] >= 30])
+            out.append(dict(img=soft_rgba(sub, m), m=m))
+    return out
+
+def place_fixed(frames, W, H, scale, cx_at, foot_y, ref=0):
+    """keep every frame's panel-relative position; anchor taken from frame `ref`'s body"""
+    bm = body_metrics(frames[ref]['m'])
+    res = []
+    for fr in frames:
+        img = Image.fromarray(fr['img'])
+        img = img.resize((max(1, round(img.width*scale)), max(1, round(img.height*scale))), Image.LANCZOS)
+        ox, oy = int(round(cx_at - bm['cx']*scale)), int(round(foot_y - bm['bot']*scale))
+        cell = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        cell.alpha_composite(img, (max(ox, 0), max(oy, 0)), (max(-ox, 0), max(-oy, 0)))
+        res.append(cell)
+    return res
+
+def blobs_rows(a, m, split_y, **kw):
+    bs = blobs(a, m, **kw)
+    for b in bs:
+        b['row'] = int(b['y0'] > split_y)
+    return sorted(bs, key=lambda b: (b['row'], b['x0']))

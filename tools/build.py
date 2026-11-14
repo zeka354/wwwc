@@ -42,10 +42,10 @@ for y0, y1 in [(58, 212), (244, 386), (418, 542), (575, 694)]:
 print('combo', len(combo))
 s_c = TARGET / body_metrics(combo[0]['m'])['h']
 cc = place(combo, W, H, s_c, CX, FY)
-save('attack', cc[9:29], 30, False)
+# (superseded by v2 sheets) save('attack', cc[9:29], 30, False)
 save('idle', cc[29:40] + cc[38:29:-1], 10, True)
-save('cast', ex_cells[9:17], 12, False)
-save('crouch', ex_cells[0:6], 14, False)
+# (superseded by v2 sheets) save('cast', ex_cells[9:17], 12, False)
+# (superseded by v2 sheets) save('crouch', ex_cells[0:6], 14, False)
 # shadow enemy: tinted walk + attack
 def shade(cells):
     out = []
@@ -59,7 +59,7 @@ def shade(cells):
         out.append(Image.fromarray(np.dstack([np.clip(tint, 0, 255), x[..., 3:]]).astype(np.uint8)))
     return out
 save('shadow_walk', shade(place(walk, W, H, s_walk, CX, FY)), 10, True)
-save('shadow_attack', shade(cc[9:29]), 26, False)
+# (superseded by v2 sheets) save('shadow_attack', shade(cc[9:29]), 26, False)
 
 # --- jump sheet
 a = load('source/jump.png'); m = mask_of(a)
@@ -69,7 +69,7 @@ for f in jump:
     bm = body_metrics(f['m']); f['ground'] = (f['y0'] + bm['bot']) >= 328
 s_j = TARGET / body_metrics(jump[0]['m'])['h']
 jump = jump[:23]
-save('jump', place(jump, W, H, s_j, CX, FY, mode='auto', stand_h=TARGET), 24, False)
+# (superseded by jump2) save('jump', place(jump, W, H, s_j, CX, FY, mode='auto', stand_h=TARGET), 24, False)
 print('jump', len(jump), [f['ground'] for f in jump])
 json.dump(dict(cell=[W, H], anchor=[CX, FY], anims=anims), open(f'{OUT}/anims.json', 'w'), indent=1)
 
@@ -78,3 +78,36 @@ from PIL import Image as _I
 _I.open('source/guide_hd.png').convert('RGB').crop((14, 20, 196, 202)).resize((128, 128), _I.LANCZOS).save(f'{OUT}/portrait.png')
 _I.open('source/art_castle.png').convert('RGB').save(f'{OUT}/bg_castle.jpg', quality=88)
 _I.open('source/art_priestess.png').convert('RGB').save(f'{OUT}/bg_title.jpg', quality=88)
+
+# ---------------------------------------------------------------- v2 sheets (cleaner, one action per sheet)
+def ground_flag(bs, lines):
+    for b in bs:
+        b['ground'] = (b['y0'] + body_metrics(b['m'])['bot']) >= lines[b['row']] - 6
+    return bs
+
+a = load('source/v2_crouch.png'); m = mask_of(a, 55)
+cr = blobs_rows(a, m, 543, minsize=3000)
+s2 = TARGET / body_metrics(cr[0]['m'])['h']
+save('squat', place(cr, W, H, s2, CX, FY), 20, False)
+
+a = load('source/v2_roll.png'); m = mask_of(a, 55)
+ro = blobs_rows(a, m, 543, minsize=3000)
+save('roll', place(ro, W, H, TARGET / body_metrics(ro[0]['m'])['h'], CX, FY), 24, False)
+
+a = load('source/v2_jump.png'); m = mask_of(a, 55)
+ju = ground_flag(blobs_rows(a, m, 500, minsize=3000), [437, 936])
+print('jump2 ground', [bool(b['ground']) for b in ju])
+sj = TARGET / body_metrics(ju[0]['m'])['h']
+save('jump2', place(ju, W, H, sj, CX, FY, mode='auto', stand_h=TARGET), 24, False)
+
+PX = [(40, 487), (535, 981), (1029, 1475), (1522, 1970)]
+PY = [(223, 668), (762, 1206), (1300, 1746)]
+for name, f in [('combo12', 'v2_combo12'), ('ritual', 'v2_ritual12')]:
+    a = load(f'source/{f}.png')
+    fr = panels(a, PX, PY)
+    sc12 = TARGET / body_metrics(fr[0]['m'])['h']
+    cells = place_fixed(fr, W, H, sc12, CX, FY)
+    save(name, cells, 14, False)
+    if name == 'combo12':
+        save('shadow_combo', shade(cells), 14, False)
+json.dump(dict(cell=[W, H], anchor=[CX, FY], anims=anims), open(f'{OUT}/anims.json', 'w'), indent=1)
