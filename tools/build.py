@@ -170,3 +170,30 @@ yc, mc = place_grid(yawn, s3), place_grid(magic, s3)
 save('afk2', yc + mc, 3, False)
 save('idle2', [yc[0], yc[3], yc[4], yc[7]], 2, True)
 json.dump(dict(cell=[W, H], anchor=[CX, FY], anims=anims), open(f'{OUT}/anims.json', 'w'), indent=1)
+
+# ---------------------------------------------------------------- unify colour: match every strip to the idle palette
+# Each sheet was generated separately, so brightness and saturation drift between them.  Per-channel histogram
+# matching of the character pixels against idle2 makes the animations read as one sprite.
+def channel_maps(src, ref):
+    maps = []
+    for c in range(3):
+        s_vals, s_cnt = np.unique(src[:, c], return_counts=True)
+        r_vals, r_cnt = np.unique(ref[:, c], return_counts=True)
+        s_cdf = np.cumsum(s_cnt) / s_cnt.sum(); r_cdf = np.cumsum(r_cnt) / r_cnt.sum()
+        lut = np.interp(np.arange(256), s_vals, np.interp(s_cdf, r_cdf, r_vals))
+        maps.append(lut)
+    return maps
+
+def body_px(a): return a[a[..., 3] > 200][:, :3].astype(int)
+ref = np.asarray(Image.open(f'{OUT}/idle2.png'))
+ref_px = body_px(ref)
+for name in ['walk', 'run', 'jump2', 'squat', 'roll', 'combo12', 'ritual', 'afk2']:
+    a = np.asarray(Image.open(f'{OUT}/{name}.png')).copy()
+    maps = channel_maps(body_px(a), ref_px)
+    vis = a[..., 3] > 0
+    for c in range(3):
+        a[..., c][vis] = np.clip(maps[c][a[..., c][vis]], 0, 255)
+    Image.fromarray(a).save(f'{OUT}/{name}.png')
+    if name == 'combo12':
+        cells = [Image.fromarray(a[:, i*W:(i+1)*W]) for i in range(a.shape[1] // W)]
+        strip(shade(cells), f'{OUT}/shadow_combo.png')
